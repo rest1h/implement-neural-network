@@ -18,20 +18,24 @@ class FullyConnectedNeuralNetwork():
         self.EI = np.zeros((1000, 8))
            
     def forward(self, x):
-        self.x_in = x
+        self.x_in = x.copy()
         self.x_out = self.x_in @ self.weight
         return self.x_out
     
     def backward(self, y_true=None, EIP=None):
         if self.activation_type == "sigmoid":
-            EIP = (self.x_out - y_true) @ self.x_out.T @ (1. - self.x_out)
-            self.weight -= self.learning_rate * self.x_in.T @ EIP
-            self.weight = self.normalize(self.weight)
-            return sum(EIP @ self.weight.T)
+            print(self.x_out, y_true)
+            EIP = (self.x_out - y_true) * self.x_out.T * (1. - self.x_out)
+            # EIP = (self.x_out - y_true) @ self.x_out.T @ (1. - self.x_out)
+            self.weight -= self.learning_rate * self.x_in.T * EIP
+            # self.weight -= self.learning_rate * self.x_in.T @ EIP
+            return sum(EIP * self.weight.T)
+            # return sum(EIP @ self.weight.T)
         elif self.activation_type == None:
-            self.EI += EIP @ (self.x_out.T @ (1. - self.x_out))
-            self.weight -= self.learning_rate * self.x_in.T @ self.EI
-            self.weight = self.normalize(self.weight)
+            self.EI += EIP * (self.x_out.T * (1. - self.x_out))
+            # self.EI += EIP @ (self.x_out.T @ (1. - self.x_out))
+            self.weight -= self.learning_rate * self.x_in.T * self.EI
+            # self.weight -= self.learning_rate * self.x_in.T @ self.EI
     
     def normalize(self, x):
         return (x - np.min(x))/(np.max(x) - np.min(x)) 
@@ -54,24 +58,28 @@ class BasicNeuralNetwork():
         self.epoch = epoch
         self.x = None
     
-    def train(self, x, y_true):
-        self.x = x        
-        result = []
+    def train(self, x_in, y_true):       
+        self.x = self.normalize(x_in)
+         
+        results = []
         while (self.epoch > 0):
-            x = self.normalize(self.x)
-            x = self.hidden_layer.forward(x)
-            x = self.out_layer.forward(x)
-            x = sigmoid(x)
+            for iter, (x, y) in enumerate(zip(self.x, y_true)):
+                result = []
+                x = self.normalize(x)
+                x = self.hidden_layer.forward(x)
+                x = self.out_layer.forward(x)
+                x = sigmoid(x)
+                
+                loss = mean_squared_error(x, y)
+                print(f'Epoch: {self.epoch}, Iteration: {iter}, Loss: {loss}')
+                result.append(loss)            
+                self.epoch -= 1
+                
+                EIP = self.out_layer.backward(y_true=y)
+                self.hidden_layer.backward(EIP=EIP)
+                results.append(sum(result))
             
-            loss = mean_squared_error(x, y_true)
-            print(self.epoch, loss)
-            result.append(loss)            
-            self.epoch -= 1
-            
-            EIP = self.out_layer.backward(y_true=y_true)
-            self.hidden_layer.backward(EIP=EIP)
-            
-        return result
+        return results
     
     def predict(self):
         pass
