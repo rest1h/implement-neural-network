@@ -1,93 +1,123 @@
+import logging
+
 import numpy as np
+
 from activation import sigmoid
 from loss import mean_squared_error
 
-# TODO: no bias, batch size = 1 
-class FullyConnectedNeuralNetwork():
-    def __init__(self, in_dim_n: int, 
-                 out_dim_n: int,
-                 learning_rate: float,
-                 activation_type: str=None):
+# logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger()
+
+
+class FullyConnectedNeuralNetwork:
+    def __init__(
+        self,
+        in_dim_n: int,
+        out_dim_n: int,
+        learning_rate: float,
+        batch_size: int,
+        layer_type: str = None,
+    ):
         self.in_dim_n = in_dim_n
         self.out_dim_n = out_dim_n
         self.weight = np.random.rand(in_dim_n, out_dim_n)
         self.x_in = None
         self.x_out = None
         self.learning_rate = learning_rate
-        self.activation_type = activation_type 
-        self.EI = np.zeros((1000, 8))
-           
-    def forward(self, x):
-        self.x_in = x.copy()
+        self.layer_type = layer_type
+        self.EI = np.zeros((batch_size, out_dim_n))
+
+    def forward(self, x: np.array):
+        self.x_in = np.copy(x)
+        logger.debug(f"{self.x_in.shape = } {self.weight.shape = }")
         self.x_out = self.x_in @ self.weight
+        logger.debug(f"{self.x_out.shape = }")
+        # logger.debug(f'{self.weight = }')
+
         return self.x_out
-    
-    def backward(self, y_true=None, EIP=None):
-        if self.activation_type == "sigmoid":
-            print(self.x_out, y_true)
-            EIP = (self.x_out - y_true) * self.x_out.T * (1. - self.x_out)
-            # EIP = (self.x_out - y_true) @ self.x_out.T @ (1. - self.x_out)
-            self.weight -= self.learning_rate * self.x_in.T * EIP
-            # self.weight -= self.learning_rate * self.x_in.T @ EIP
-            return sum(EIP * self.weight.T)
-            # return sum(EIP @ self.weight.T)
-        elif self.activation_type == None:
-            self.EI += EIP * (self.x_out.T * (1. - self.x_out))
-            # self.EI += EIP @ (self.x_out.T @ (1. - self.x_out))
-            self.weight -= self.learning_rate * self.x_in.T * self.EI
-            # self.weight -= self.learning_rate * self.x_in.T @ self.EI
-    
-    def normalize(self, x):
-        return (x - np.min(x))/(np.max(x) - np.min(x)) 
-    
-    
-class BasicNeuralNetwork():
-    def __init__(self, 
-                 in_dim_n: int=2, 
-                 hidden_dim_n: int=8, 
-                 out_dim_n: int=1,
-                 epoch: int=10,
-                 learning_rate: float=0.01):
-        self.hidden_layer = FullyConnectedNeuralNetwork(in_dim_n, 
-                                                        hidden_dim_n, 
-                                                        learning_rate)
-        self.out_layer = FullyConnectedNeuralNetwork(hidden_dim_n, 
-                                                     out_dim_n, 
-                                                     learning_rate, 
-                                                     "sigmoid")
+
+    def backward(self,
+                 x_out,
+                 y_true: np.array = None,
+                 einsum_EIP: np.array = None):
+        if self.layer_type == "out":
+            logger.debug(f"{x_out.shape =}, {y_true.shape = }")
+            EIP = (x_out - y_true) @ x_out.T @ (1.0 - x_out)
+            self.weight -= self.learning_rate * self.x_in.T @ EIP
+            # if sum(np.where(abs(self.weight) > 1.0, 1, 0)):
+            #     self.weight /= np.linalg.norm(self.weight)
+            logger.debug(f"{EIP.shape =}, {self.weight.shape = }")
+            return np.einsum("ik,kj->ij", EIP, self.weight.T)
+        elif not self.layer_type == "hidden":
+            logger.debug(f"{self.EI.shape =} {x_out.shape =}")
+            self.EI += einsum_EIP @ (x_out.T @ (1.0 - x_out))
+            logger.debug(f"{self.EI.shape =} {self.x_in.shape =}")
+            self.weight -= self.learning_rate * self.x_in.T @ self.EI
+            # if sum(np.where(abs(self.weight) > 1.0, 1, 0)):
+            #     self.weight /= np.linalg.norm(self.weight)
+
+
+class BasicNeuralNetwork:
+    def __init__(
+        self,
+        in_dim_n: int,
+        hidden_dim_n: int,
+        out_dim_n: int,
+        epoch: int,
+        learning_rate: float,
+        batch_size: int,
+    ):
+        self.hidden_layer = FullyConnectedNeuralNetwork(
+            in_dim_n, hidden_dim_n, learning_rate, batch_size, "hidden"
+        )
+        self.out_layer = FullyConnectedNeuralNetwork(
+            hidden_dim_n, out_dim_n, learning_rate, batch_size, "out"
+        )
         self.epoch = epoch
-        self.x = None
-    
-    def train(self, x_in, y_true):       
-        self.x = self.normalize(x_in)
-         
+        self.batch_size = batch_size
+
+    def train(self, x_in: np.array, y_true: np.array):
+        x_norm = self._normalize(x_in)
         results = []
-        while (self.epoch > 0):
-            for iter, (x, y) in enumerate(zip(self.x, y_true)):
+        max_epoch = self.epoch
+        while self.epoch > 0:
+            x_iter = self._batch(np.copy(x_norm))
+            y_iter = self._batch(y_true)
+            for n_iter, (x, y) in enumerate(zip(x_iter, y_iter)):
                 result = []
-                x = self.normalize(x)
                 x = self.hidden_layer.forward(x)
-                x = self.out_layer.forward(x)
-                x = sigmoid(x)
-                
-                loss = mean_squared_error(x, y)
-                print(f'Epoch: {self.epoch}, Iteration: {iter}, Loss: {loss}')
-                result.append(loss)            
-                self.epoch -= 1
-                
-                EIP = self.out_layer.backward(y_true=y)
-                self.hidden_layer.backward(EIP=EIP)
+                x_out_1 = sigmoid(x)
+                x = self.out_layer.forward(x_out_1)
+                x_out_2 = sigmoid(x)
+
+                loss = mean_squared_error(x_out_2, y)
+                print(
+                    f"Epoch: {max_epoch - self.epoch}, "
+                    f"Iteration: {n_iter}, Loss: {loss}"
+                )
+                result.append(loss)
+
+                # d_sig_1 = self.sigmoid_2.backward()
+                einsum_EIP = self.out_layer.backward(x_out_2, y_true=y)
+                self.hidden_layer.backward(x_out_1,
+                                           y_true=y,
+                                           einsum_EIP=einsum_EIP)
                 results.append(sum(result))
-            
+            self.epoch -= 1
+
         return results
-    
+
+    def _batch(self, x: np.array):
+        end = len(x)
+        for idx in range(0, end, self.batch_size):
+            yield x[idx: min(idx + self.batch_size, end)]
+
     def predict(self):
         pass
-    
-    def normalize(self, x):
-        return (x - np.min(x))/(np.max(x) - np.min(x)) 
-    
+
+    @staticmethod
+    def _normalize(x):
+        return x / np.linalg.norm(x)
+
     def drop_out(x):
         pass
-    
-    
