@@ -22,39 +22,44 @@ class FullyConnectedNeuralNetwork:
         self.out_dim_n = out_dim_n
         self.weight = np.random.rand(in_dim_n, out_dim_n)
         self.x_in = None
-        self.x_out = None
         self.learning_rate = learning_rate
         self.layer_type = layer_type
         self.EI = np.zeros((batch_size, out_dim_n))
+        self.threshold = 1
+        self.grad = None
 
     def forward(self, x: np.array):
         self.x_in = np.copy(x)
         logger.debug(f"{self.x_in.shape = } {self.weight.shape = }")
-        self.x_out = self.x_in @ self.weight
-        logger.debug(f"{self.x_out.shape = }")
-        # logger.debug(f'{self.weight = }')
+        x_out = self.x_in @ self.weight
+        logger.debug(f"{x_out.shape = }")
+        logger.debug(f'{self.weight = }')
 
-        return self.x_out
+        return x_out
 
     def backward(self,
-                 x_out,
+                 x_out: np.array,
                  y_true: np.array = None,
                  einsum_EIP: np.array = None):
         if self.layer_type == "out":
             logger.debug(f"{x_out.shape =}, {y_true.shape = }")
             EIP = (x_out - y_true) @ x_out.T @ (1.0 - x_out)
-            self.weight -= self.learning_rate * self.x_in.T @ EIP
-            # if sum(np.where(abs(self.weight) > 1.0, 1, 0)):
-            #     self.weight /= np.linalg.norm(self.weight)
+            self.grad = self.x_in.T @ EIP
+            self._clip_grad()
+            self.weight -= self.learning_rate * self.grad
             logger.debug(f"{EIP.shape =}, {self.weight.shape = }")
             return np.einsum("ik,kj->ij", EIP, self.weight.T)
         elif not self.layer_type == "hidden":
             logger.debug(f"{self.EI.shape =} {x_out.shape =}")
             self.EI += einsum_EIP @ (x_out.T @ (1.0 - x_out))
             logger.debug(f"{self.EI.shape =} {self.x_in.shape =}")
-            self.weight -= self.learning_rate * self.x_in.T @ self.EI
-            # if sum(np.where(abs(self.weight) > 1.0, 1, 0)):
-            #     self.weight /= np.linalg.norm(self.weight)
+            self.grad = self.x_in.T @ self.EI
+            self._clip_grad()
+            self.weight -= self.learning_rate * self.grad
+
+    def _clip_grad(self):
+        if any(abs(self.grad) > self.threshold):
+            self.grad /= np.linalg.norm(self.grad)
 
 
 class BasicNeuralNetwork:
@@ -81,7 +86,7 @@ class BasicNeuralNetwork:
         results = []
         max_epoch = self.epoch
         while self.epoch > 0:
-            x_iter = self._batch(np.copy(x_norm))
+            x_iter = self._batch(x_norm)
             y_iter = self._batch(y_true)
             for n_iter, (x, y) in enumerate(zip(x_iter, y_iter)):
                 result = []
@@ -97,7 +102,6 @@ class BasicNeuralNetwork:
                 )
                 result.append(loss)
 
-                # d_sig_1 = self.sigmoid_2.backward()
                 einsum_EIP = self.out_layer.backward(x_out_2, y_true=y)
                 self.hidden_layer.backward(x_out_1,
                                            y_true=y,
@@ -107,7 +111,8 @@ class BasicNeuralNetwork:
 
         return results
 
-    def _batch(self, x: np.array):
+    def _batch(self, x_in: np.array):
+        x = np.copy(x_in)
         end = len(x)
         for idx in range(0, end, self.batch_size):
             yield x[idx: min(idx + self.batch_size, end)]
@@ -119,5 +124,5 @@ class BasicNeuralNetwork:
     def _normalize(x):
         return x / np.linalg.norm(x)
 
-    def drop_out(x):
+    def drop_out(self, x):
         pass
