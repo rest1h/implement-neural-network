@@ -39,11 +39,11 @@ class FullyConnectedNeuralNetwork:
         return x_out
 
     def backward(
-        self, x_out: np.array, y_true: np.array = None, agg_EI: np.array = None
+        self, y_out: np.array, y_true: np.array = None, agg_EI: np.array = None
     ):
         if self.layer_type == "out":
-            logger.debug(f"{x_out.shape =}, {y_true.shape = }")
-            EI = (x_out - y_true) @ x_out.T @ (1.0 - x_out)
+            logger.debug(f"{y_out.shape =}, {y_true.shape = }")
+            EI = (y_out - y_true) @ y_out.T @ (1.0 - y_out)
             grad = self.x_in.T @ EI
             self.weight -= self.optim.optimize(grad)
             logger.debug(f"{EI.shape =}, {self.weight.shape = }")
@@ -51,8 +51,8 @@ class FullyConnectedNeuralNetwork:
             return np.einsum("ik,kj->ij", EI, self.weight.T)
 
         elif not self.layer_type == "hidden":
-            logger.debug(f"{self.EI.shape =} {x_out.shape =}")
-            self.EI += agg_EI @ (x_out.T @ (1.0 - x_out))
+            logger.debug(f"{self.EI.shape =} {y_out.shape =}")
+            self.EI += agg_EI @ (y_out.T @ (1.0 - y_out))
             logger.debug(f"{self.EI.shape =} {self.x_in.shape =}")
             grad = self.x_in.T @ self.EI
             self.weight -= self.optim.optimize(grad)
@@ -93,13 +93,12 @@ class BasicNeuralNetwork:
 
     def train(self, x_in: np.array, y: np.array):
         x_norm = self._normalize(x_in)
-        results = []
+        result = []
         max_epoch = self.epoch
         while self.epoch > 0:
             x_iter = self._batch(x_norm)
             y_iter = self._batch(y)
             for n_iter, (x, y_true) in enumerate(zip(x_iter, y_iter)):
-                result = []
                 x1 = self.hidden_layer.forward(x)
                 y1 = sigmoid(x1)
                 x2 = self.out_layer.forward(y1)
@@ -111,13 +110,12 @@ class BasicNeuralNetwork:
                     f"Iteration: {n_iter}, Loss: {loss}"
                 )
                 result.append(loss)
-                results.append(sum(result))
 
                 agg_EI = self.out_layer.backward(y2, y_true=y_true)
                 self.hidden_layer.backward(y1, y_true=y_true, agg_EI=agg_EI)
             self.epoch -= 1
 
-        return results
+        return result
 
     def _batch(self, x_in: np.array):
         x = np.copy(x_in)
