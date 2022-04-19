@@ -5,7 +5,6 @@ import numpy as np
 from activation import sigmoid
 from loss import mean_squared_error
 from optimize import Optimizer
-import matplotlib.pyplot as plt
 
 # logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
@@ -92,18 +91,22 @@ class BasicNeuralNetwork:
         )
         self.epoch = epoch
         self.batch_size = batch_size
+        self.hidden_mat = None
+        self.out_mat = None
+        self.norm = None
+        self.val_mode = False
 
     def train(self, x_in: np.array, y: np.array, x_valid: np.array = np.nan, y_valid: np.array = np.nan):
         result = []
         max_epoch = self.epoch
-        val_mode = not (np.isnan(x_valid.all()) or np.isnan(y_valid.all()))
 
-        x_batch = self._batch(x_in, normalize=True)
+        x_batch = self._batch(x_in) #, normalize=True)
         y_batch = self._batch(y)
 
-        if val_mode:
-            x_val_iter = self._batch(x_valid, normalize=True)
-            y_val_iter = self._batch(y_valid)
+        self.val_mode = not (np.isnan(x_valid.all()) or np.isnan(y_valid.all()))
+        if self.val_mode:
+            x_val_batch = self._batch(x_valid) #, normalize=True)
+            y_val_batch = self._batch(y_valid)
             val_result = []
         #     zipped_data = zip((x_iter, y_iter), (x_val_iter, y_val_iter))
         # else:
@@ -111,39 +114,40 @@ class BasicNeuralNetwork:
 
         while self.epoch > 0:
             x_iter, y_iter = np.copy(x_batch), np.copy(y_batch)
-            for n_iter, (x, y_true) in enumerate(zip(x_iter, y_iter)):
-                x1 = self.hidden_layer.forward(x)
-                y1 = sigmoid(x1)
-                x2 = self.out_layer.forward(y1)
-                y2 = sigmoid(x2)
+            if self.val_mode:
+                x_val_iter, y_val_iter = np.copy(x_val_batch), np.copy(y_val_batch)
+                for n_iter, (x, y_true, x_val, y_val) in enumerate(zip(x_iter, y_iter, x_val_iter, y_val_iter)):
+                    self.fit(x)
+                    loss = mean_squared_error(self.out_mat, y_val)
 
-                loss = mean_squared_error(y2, y_true)
-                print(
-                    f"Training... Epoch: {max_epoch - self.epoch}, "
-                    f"Iteration: {n_iter}, Loss: {loss}"
-                )
-                result.append(loss)
+                    agg_EI = self.out_layer.backward(self.out_mat, y_true=y_true)
+                    self.hidden_layer.backward(self.hidden_mat, y_true=y_true, agg_EI=agg_EI)
 
-                agg_EI = self.out_layer.backward(y2, y_true=y_true)
-                self.hidden_layer.backward(y1, y_true=y_true, agg_EI=agg_EI)
+                    self.fit(x_val, val_mode=True)
+                    val_loss = mean_squared_error(self.out_mat, y_val)
 
-            if val_mode:
-                for n_iter, (x_val, y_val) in enumerate(zip(x_val_iter, y_val_iter)):
-                    z = self.hidden_layer.forward(x_val, val_mode=val_mode)
-                    z = sigmoid(z)
-                    z = self.out_layer.forward(z, val_mode=val_mode)
-                    z = sigmoid(z)
-
-                    loss = mean_squared_error(z, y_val)
                     print(
-                        f"Validating... Epoch: {max_epoch - self.epoch}, "
-                        f"Iteration: {n_iter}, Loss: {loss}"
+                        f"Epoch: {max_epoch - self.epoch}, Training Iteration: {n_iter}, Loss: {loss} ... Validating Iteration: {n_iter}, Loss: {val_loss}"
                     )
-                    val_result.append(loss)
-            self.epoch += -1
-            print(self.epoch)
+                result.append(loss)
+                val_result.append(val_loss)
 
-        if val_mode:
+            else:
+                for n_iter, (x, y_true) in enumerate(zip(x_iter, y_iter)):
+                    self.fit(x)
+
+                    loss = mean_squared_error(self.out_mat, y_true)
+                    print(
+                        f"Epoch: {max_epoch - self.epoch}, Training Iteration: {n_iter}, Loss: {loss}"
+                    )
+                    result.append(loss)
+
+                    agg_EI = self.out_layer.backward(self.out_mat, y_true=y_true)
+                    self.hidden_layer.backward(self.hidden_mat, y_true=y_true, agg_EI=agg_EI)
+
+            self.epoch += -1
+
+        if self.val_mode:
             return result, val_result
 
         return result
@@ -155,17 +159,16 @@ class BasicNeuralNetwork:
         end = len(x)
         return np.array([x[idx: min(idx + self.batch_size, end)] for idx in range(0, end, self.batch_size)])
 
+    def fit(self, x: np.array, val_mode: bool = False):
+        x = self.hidden_layer.forward(x, val_mode=val_mode)
+        self.hidden_mat = sigmoid(x)
+        x = self.out_layer.forward(self.hidden_mat, val_mode=val_mode)
+        self.out_mat = sigmoid(x)
 
-    def predict(self, x_in: np.array):
-        x = np.copy(x_in)
-        x = self.hidden_layer.forward(x)
-        x = sigmoid(x)
-        x = self.out_layer.forward(x)
-        return sigmoid(x)
-
-    @staticmethod
-    def _normalize(x):
-        return x / np.linalg.norm(x)
+    def _normalize(self, x):
+        if not self.val_mode:
+            self.norm = np.linalg.norm(x)
+        return x / self.norm
 
     def drop_out(self, x):
         pass
