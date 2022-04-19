@@ -123,8 +123,12 @@ class BasicNeuralNetwork:
         for idx in range(0, end, self.batch_size):
             yield x[idx: min(idx + self.batch_size, end)]
 
-    def predict(self):
-        pass
+    def predict(self, x_in: np.array):
+        x = np.copy(x_in)
+        x = self.hidden_layer.forward(x)
+        x = sigmoid(x)
+        x = self.out_layer.forward(x)
+        return sigmoid(x)
 
     @staticmethod
     def _normalize(x):
