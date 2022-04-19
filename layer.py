@@ -5,6 +5,7 @@ import numpy as np
 from activation import sigmoid
 from loss import mean_squared_error
 from optimize import Optimizer
+import matplotlib.pyplot as plt
 
 # logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
@@ -29,10 +30,11 @@ class FullyConnectedNeuralNetwork:
         self.EI = np.zeros((batch_size, out_dim_n))
         self.optim = Optimizer(optim_fn, learning_rate, clip_grad_l2)
 
-    def forward(self, x: np.array):
-        self.x_in = np.copy(x)
-        logger.debug(f"{self.x_in.shape = } {self.weight.shape = }")
-        x_out = self.x_in @ self.weight
+    def forward(self, x: np.array, val_mode: bool = False):
+        if not val_mode:
+            self.x_in = np.copy(x)
+        logger.debug(f"{x.shape = } {self.weight.shape = }")
+        x_out = x @ self.weight
         logger.debug(f"{x_out.shape = }")
         logger.debug(f"{self.weight = }")
 
@@ -91,13 +93,24 @@ class BasicNeuralNetwork:
         self.epoch = epoch
         self.batch_size = batch_size
 
-    def train(self, x_in: np.array, y: np.array):
-        x_norm = self._normalize(x_in)
+    def train(self, x_in: np.array, y: np.array, x_valid: np.array = np.nan, y_valid: np.array = np.nan):
         result = []
         max_epoch = self.epoch
+        val_mode = not (np.isnan(x_valid.all()) or np.isnan(y_valid.all()))
+
+        x_batch = self._batch(x_in, normalize=True)
+        y_batch = self._batch(y)
+
+        if val_mode:
+            x_val_iter = self._batch(x_valid, normalize=True)
+            y_val_iter = self._batch(y_valid)
+            val_result = []
+        #     zipped_data = zip((x_iter, y_iter), (x_val_iter, y_val_iter))
+        # else:
+        #     zipped_data =
+
         while self.epoch > 0:
-            x_iter = self._batch(x_norm)
-            y_iter = self._batch(y)
+            x_iter, y_iter = np.copy(x_batch), np.copy(y_batch)
             for n_iter, (x, y_true) in enumerate(zip(x_iter, y_iter)):
                 x1 = self.hidden_layer.forward(x)
                 y1 = sigmoid(x1)
@@ -106,22 +119,42 @@ class BasicNeuralNetwork:
 
                 loss = mean_squared_error(y2, y_true)
                 print(
-                    f"Epoch: {max_epoch - self.epoch}, "
+                    f"Training... Epoch: {max_epoch - self.epoch}, "
                     f"Iteration: {n_iter}, Loss: {loss}"
                 )
                 result.append(loss)
 
                 agg_EI = self.out_layer.backward(y2, y_true=y_true)
                 self.hidden_layer.backward(y1, y_true=y_true, agg_EI=agg_EI)
-            self.epoch -= 1
+
+            if val_mode:
+                for n_iter, (x_val, y_val) in enumerate(zip(x_val_iter, y_val_iter)):
+                    z = self.hidden_layer.forward(x_val, val_mode=val_mode)
+                    z = sigmoid(z)
+                    z = self.out_layer.forward(z, val_mode=val_mode)
+                    z = sigmoid(z)
+
+                    loss = mean_squared_error(z, y_val)
+                    print(
+                        f"Validating... Epoch: {max_epoch - self.epoch}, "
+                        f"Iteration: {n_iter}, Loss: {loss}"
+                    )
+                    val_result.append(loss)
+            self.epoch += -1
+            print(self.epoch)
+
+        if val_mode:
+            return result, val_result
 
         return result
 
-    def _batch(self, x_in: np.array):
+    def _batch(self, x_in: np.array, normalize: bool = False):
         x = np.copy(x_in)
+        if normalize:
+            x = self._normalize(x)
         end = len(x)
-        for idx in range(0, end, self.batch_size):
-            yield x[idx: min(idx + self.batch_size, end)]
+        return np.array([x[idx: min(idx + self.batch_size, end)] for idx in range(0, end, self.batch_size)])
+
 
     def predict(self, x_in: np.array):
         x = np.copy(x_in)
