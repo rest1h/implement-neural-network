@@ -11,7 +11,7 @@ class Optimizer:
     def optimize(self, grad: np.array):
         if self.optim_fn.lower() == "sgd":
             return self.sgd(grad)
-        elif self.optim_fn.lower() == 'adagrad':
+        elif self.optim_fn.lower() == "adagrad":
             return self.adagrad(grad)
 
     def sgd(self, grad_in: np.array):

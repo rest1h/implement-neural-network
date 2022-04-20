@@ -1,4 +1,5 @@
 import logging
+import math
 
 import numpy as np
 
@@ -70,6 +71,7 @@ class BasicNeuralNetwork:
         batch_size: int,
         optimize_fn: str = "sgd",
         clip_grad_l2: float = None,
+
     ):
         self.hidden_layer = FullyConnectedNeuralNetwork(
             in_dim_n,
@@ -96,54 +98,58 @@ class BasicNeuralNetwork:
         self.norm = None
         self.val_mode = False
 
-    def train(self, x_in: np.array, y: np.array, x_valid: np.array = np.nan, y_valid: np.array = np.nan):
+    def train(
+        self,
+        x_in: np.array,
+        y: np.array,
+        x_valid: np.array = None,
+        y_valid: np.array = None,
+    ):
         result = []
         max_epoch = self.epoch
 
-        x_batch = self._batch(x_in) #, normalize=True)
-        y_batch = self._batch(y)
+        x_in = self._normalize(x_in)
 
-        self.val_mode = not (np.isnan(x_valid.all()) or np.isnan(y_valid.all()))
+        self.val_mode = not ((x_valid is None) or (y_valid is None))
         if self.val_mode:
-            x_val_batch = self._batch(x_valid) #, normalize=True)
-            y_val_batch = self._batch(y_valid)
             val_result = []
-        #     zipped_data = zip((x_iter, y_iter), (x_val_iter, y_val_iter))
-        # else:
-        #     zipped_data =
 
         while self.epoch > 0:
-            x_iter, y_iter = np.copy(x_batch), np.copy(y_batch)
+            batch_mask = np.random.choice(1000, 1)
+            x = np.copy(x_in[batch_mask])
+
             if self.val_mode:
-                x_val_iter, y_val_iter = np.copy(x_val_batch), np.copy(y_val_batch)
-                for n_iter, (x, y_true, x_val, y_val) in enumerate(zip(x_iter, y_iter, x_val_iter, y_val_iter)):
-                    self.fit(x)
-                    loss = mean_squared_error(self.out_mat, y_val)
+                batch_val_mask = np.random.choice(3000, 1)
+                x_val = np.copy(x_valid[batch_val_mask])
+                self.fit(x)
+                loss = mean_squared_error(self.out_mat, y[batch_mask])
 
-                    agg_EI = self.out_layer.backward(self.out_mat, y_true=y_true)
-                    self.hidden_layer.backward(self.hidden_mat, y_true=y_true, agg_EI=agg_EI)
+                agg_EI = self.out_layer.backward(self.out_mat, y_true=y[batch_mask])
+                self.hidden_layer.backward(
+                    self.hidden_mat, y_true=y[batch_mask], agg_EI=agg_EI
+                )
 
-                    self.fit(x_val, val_mode=True)
-                    val_loss = mean_squared_error(self.out_mat, y_val)
+                self.fit(x_val, val_mode=True)
+                val_loss = mean_squared_error(self.out_mat, y_valid[batch_val_mask])
 
-                    print(
-                        f"Epoch: {max_epoch - self.epoch}, Training Iteration: {n_iter}, Loss: {loss} ... Validating Iteration: {n_iter}, Loss: {val_loss}"
-                    )
+                print(
+                    f"Epoch: {max_epoch - self.epoch}, Train Loss: {loss} ... "
+                    f"Validation Loss: {val_loss}"
+                )
                 result.append(loss)
                 val_result.append(val_loss)
 
             else:
-                for n_iter, (x, y_true) in enumerate(zip(x_iter, y_iter)):
-                    self.fit(x)
+                self.fit(x)
 
-                    loss = mean_squared_error(self.out_mat, y_true)
-                    print(
-                        f"Epoch: {max_epoch - self.epoch}, Training Iteration: {n_iter}, Loss: {loss}"
-                    )
-                    result.append(loss)
+                loss = mean_squared_error(self.out_mat, y[batch_mask])
+                print(f"Epoch: {max_epoch - self.epoch}, Training Loss: {loss}")
+                result.append(loss)
 
-                    agg_EI = self.out_layer.backward(self.out_mat, y_true=y_true)
-                    self.hidden_layer.backward(self.hidden_mat, y_true=y_true, agg_EI=agg_EI)
+                agg_EI = self.out_layer.backward(self.out_mat, y_true=y[batch_mask])
+                self.hidden_layer.backward(
+                    self.hidden_mat, y_true=y[batch_mask], agg_EI=agg_EI
+                )
 
             self.epoch += -1
 
@@ -157,7 +163,12 @@ class BasicNeuralNetwork:
         if normalize:
             x = self._normalize(x)
         end = len(x)
-        return np.array([x[idx: min(idx + self.batch_size, end)] for idx in range(0, end, self.batch_size)])
+        return np.array(
+            [
+                x[idx: min(idx + self.batch_size, end)]
+                for idx in range(0, end, self.batch_size)
+            ]
+        )
 
     def fit(self, x: np.array, val_mode: bool = False):
         x = self.hidden_layer.forward(x, val_mode=val_mode)
@@ -165,8 +176,8 @@ class BasicNeuralNetwork:
         x = self.out_layer.forward(self.hidden_mat, val_mode=val_mode)
         self.out_mat = sigmoid(x)
 
-    def _normalize(self, x):
-        if not self.val_mode:
+    def _normalize(self, x: np.array, val_mode: bool = False):
+        if not val_mode:
             self.norm = np.linalg.norm(x)
         return x / self.norm
 
