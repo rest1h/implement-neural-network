@@ -21,6 +21,7 @@ class FullyConnectedNeuralNetwork:
         layer_type: str,
         optim_fn: str = "sgd",
         clip_grad_l2: float = None,
+        momentum: float = None
     ):
         self.in_dim_n = in_dim_n
         self.out_dim_n = out_dim_n
@@ -28,7 +29,7 @@ class FullyConnectedNeuralNetwork:
         self.x_in = None
         self.layer_type = layer_type or None
         self.EI = np.zeros((batch_size, out_dim_n))
-        self.optim = Optimizer(optim_fn, learning_rate, clip_grad_l2)
+        self.optim = Optimizer(optim_fn, learning_rate, clip_grad_l2, momentum)
 
     def forward(self, x: np.array, val_mode: bool = False):
         if not val_mode:
@@ -71,7 +72,7 @@ class BasicNeuralNetwork:
         batch_size: int,
         optimize_fn: str = "sgd",
         clip_grad_l2: float = None,
-
+        momentum: float = None
     ):
         self.hidden_layer = FullyConnectedNeuralNetwork(
             in_dim_n,
@@ -81,6 +82,7 @@ class BasicNeuralNetwork:
             "hidden",
             optimize_fn,
             clip_grad_l2,
+            momentum
         )
         self.out_layer = FullyConnectedNeuralNetwork(
             hidden_dim_n,
@@ -90,6 +92,7 @@ class BasicNeuralNetwork:
             "out",
             optimize_fn,
             clip_grad_l2,
+            momentum
         )
         self.epoch = epoch
         self.batch_size = batch_size
@@ -115,11 +118,11 @@ class BasicNeuralNetwork:
             val_result = []
 
         while self.epoch > 0:
-            batch_mask = np.random.choice(1000, 1)
+            batch_mask = np.random.choice(x_in.shape[0], self.batch_size)
             x = np.copy(x_in[batch_mask])
 
             if self.val_mode:
-                batch_val_mask = np.random.choice(3000, 1)
+                batch_val_mask = np.random.choice(x_valid.shape[0], self.batch_size)
                 x_val = np.copy(x_valid[batch_val_mask])
                 self.fit(x)
                 loss = mean_squared_error(self.out_mat, y[batch_mask])
@@ -177,6 +180,7 @@ class BasicNeuralNetwork:
         self.out_mat = sigmoid(x)
 
     def _normalize(self, x: np.array, val_mode: bool = False):
+        # return (x - x.mean(axis=0)) / x.std(axis=0)
         if not val_mode:
             self.norm = np.linalg.norm(x)
         return x / self.norm

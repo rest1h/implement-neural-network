@@ -2,11 +2,14 @@ import numpy as np
 
 
 class Optimizer:
-    def __init__(self, optim_fn: str, lr: float, clip_grad_l2: float):
+    def __init__(self, optim_fn: str, lr: float, clip_grad_l2: float, momentum: float = None):
         self.optim_fn = optim_fn
         self.lr = lr
         self.clip_grad_l2 = clip_grad_l2
         self.square_diag_grad = None
+        self.use_momentum = momentum
+        self.momentum = momentum
+        self.grad_shift = 0
 
     def optimize(self, grad: np.array):
         if self.optim_fn.lower() == "sgd":
@@ -18,7 +21,9 @@ class Optimizer:
         grad = np.copy(grad_in)
         if self.clip_grad_l2:
             grad = self._clip_grad(grad)
-        # grad += np.random.normal(0.0, 1, grad.shape)
+        if self.use_momentum:
+            self.grad_shift =  self.lr * grad + self.momentum * self.grad_shift
+            return self.grad_shift
         return self.lr * grad
 
     def adagrad(self, grad_in: np.array):
